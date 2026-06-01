@@ -224,9 +224,9 @@ function PDFModal({pdf, onClose}) {
     return()=>{cancelled=true;};
   },[pdf.data]);
 
-  /* ── Init StPageFlip (DESKTOP only) ── */
+  /* ── Init StPageFlip (ALL devices) ── */
   useEffect(()=>{
-    if(isMobile||loading||useFallback||pages.length===0||!containerRef.current) return;
+    if(loading||useFallback||pages.length===0||!containerRef.current) return;
     let destroyed=false;
     (async()=>{
       try{
@@ -236,24 +236,28 @@ function PDFModal({pdf, onClose}) {
         catch(e){ setUseFallback(true);return; }
       }
       if(destroyed||!window.St||!containerRef.current) return;
-      const stageW = window.innerWidth  - 60;
+      const isMob  = window.innerWidth < 768;
+      const stageW = window.innerWidth  - (isMob ? 8 : 60);
       const stageH = window.innerHeight - 120;
-      const pageH  = Math.min(stageH - 20, 680);
-      const pageW  = Math.round(pageH * 0.72);
+      const pageH  = Math.min(stageH - 20, isMob ? stageH - 20 : 680);
+      const pageW  = isMob
+        ? Math.min(Math.round(pageH * 0.72), Math.floor(stageW/2) - 4)
+        : Math.round(pageH * 0.72);
       try{
         const pf = new window.St.PageFlip(containerRef.current,{
           width:pageW, height:pageH,
           size:"fixed",
           minWidth:pageW, maxWidth:pageW,
           minHeight:pageH, maxHeight:pageH,
-          drawShadow:true, flippingTime:650,
+          drawShadow:true,
+          flippingTime: isMob ? 500 : 650,
           usePortrait:false,
           startZIndex:10, autoSize:false,
           showCover:false, startPage:pages.length-1,
-          mobileScrollSupport:false,
+          mobileScrollSupport:true,
           clickEventForward:true,
           useMouseEvents:true,
-          swipeDistance:30,
+          swipeDistance: isMob ? 20 : 30,
           showPageCorners:true,
           disableFlipByClick:false,
         });
@@ -283,21 +287,12 @@ function PDFModal({pdf, onClose}) {
 
   /* ── Mobile: simple page navigation ── */
   const flipNext = useCallback(()=>{
-    if(isMobile){
-      setCurPage(p=>Math.min(p+1, totalPages-1));
-    }else{
-      /* Desktop: pages reversed so flipNext = forward */
-      try{pageFlipRef.current?.flipNext();}catch(e){}
-    }
-  },[isMobile,totalPages]);
+    try{pageFlipRef.current?.flipNext();}catch(e){}
+  },[]);
 
   const flipPrev = useCallback(()=>{
-    if(isMobile){
-      setCurPage(p=>Math.max(p-1, 0));
-    }else{
-      try{pageFlipRef.current?.flipNext();}catch(e){}
-    }
-  },[isMobile]);
+    try{pageFlipRef.current?.flipPrev();}catch(e){}
+  },[]);
 
   /* touch swipe for mobile */
   const onTouchStart = e=>{
@@ -390,56 +385,28 @@ function PDFModal({pdf, onClose}) {
           </div>
         )}
 
-        {/* ══ MOBILE: single page swipe reader ══ */}
-        {!loading&&!useFallback&&pages.length>0&&isMobile&&(
-          <div style={{position:"relative",width:MOB_W,height:MOB_H,
-            boxShadow:"0 20px 60px rgba(0,0,0,.9)"}}>
-            {/* Current page */}
-            <img
-              src={pages[curPage]}
-              alt={`Page ${curPage+1}`}
-              draggable={false}
-              style={{width:"100%",height:"100%",objectFit:"contain",
-                display:"block",background:"#fff",borderRadius:4}}
-            />
-            {/* Tap zones — left side = prev, right side = next */}
-            {/* Tap right side = next page (Urdu reads right→left) */}
-            <div onClick={flipNext}
-              style={{position:"absolute",top:0,left:0,width:"40%",height:"100%",cursor:"pointer",zIndex:5,
-                display:"flex",alignItems:"center",justifyContent:"flex-start",paddingLeft:8}}>
-              {curPage<totalPages-1&&<span style={{fontSize:"2rem",color:"rgba(255,255,255,.25)"}}>›</span>}
-            </div>
-            {/* Tap left side = prev page */}
-            <div onClick={flipPrev}
-              style={{position:"absolute",top:0,right:0,width:"40%",height:"100%",cursor:"pointer",zIndex:5,
-                display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:8}}>
-              {curPage>0&&<span style={{fontSize:"2rem",color:"rgba(255,255,255,.25)"}}>‹</span>}
-            </div>
-          </div>
-        )}
-
-        {/* ══ DESKTOP: StPageFlip double-page flipbook ══ */}
-        {!loading&&!useFallback&&pages.length>0&&!isMobile&&(
-          <div style={{boxShadow:"0 60px 120px rgba(0,0,0,.95),0 0 60px rgba(109,40,217,.08)"}}>
+        {/* ══ StPageFlip — works on ALL devices ══ */}
+        {!loading&&!useFallback&&pages.length>0&&(
+          <div style={{boxShadow:"0 40px 100px rgba(0,0,0,.95),0 0 40px rgba(109,40,217,.08)"}}>
             <div ref={containerRef} style={{display:"block"}}>
               {(()=>{
-                // Reverse page order so StPageFlip's natural drag (left→right) = forward in Urdu
-                // StPageFlip: drag left page right = go to NEXT index
-                // Reversed: index 0 = last page, last index = cover
-                // startPage = last index so cover shows first on left
-                const rev = [...pages].reverse();
+                const rev=[...pages].reverse();
                 const ordered=[];
                 for(let i=0;i<rev.length;i+=2){
-                  ordered.push({src:rev[i]  ||null, density:"soft"}); // LEFT
-                  ordered.push({src:rev[i+1]||null, density:"soft"}); // RIGHT
+                  ordered.push({src:rev[i]  ||null,density:"soft"});
+                  ordered.push({src:rev[i+1]||null,density:"soft"});
                 }
+                const PH_=Math.min(window.innerHeight-140,window.innerWidth<768?window.innerHeight-140:680);
+                const PW_=window.innerWidth<768
+                  ?Math.min(Math.round(PH_*0.72),Math.floor((window.innerWidth-8)/2)-2)
+                  :Math.round(PH_*0.72);
                 return ordered.map((item,i)=>(
                   <div key={i} className="page" data-density={item.density}
-                    style={{width:PW_D,height:PH_D,background:"#fff",overflow:"hidden"}}>
+                    style={{width:PW_,height:PH_,background:"#fff",overflow:"hidden"}}>
                     {item.src
-                      ? <img src={item.src} draggable={false}
+                      ?<img src={item.src} draggable={false}
                           style={{width:"100%",height:"100%",objectFit:"contain",display:"block",pointerEvents:"none"}}/>
-                      : <div style={{width:"100%",height:"100%",background:"linear-gradient(135deg,#faf8f3,#f0ece0)"}}/>
+                      :<div style={{width:"100%",height:"100%",background:"linear-gradient(135deg,#faf8f3,#f0ece0)"}}/>
                     }
                   </div>
                 ));
